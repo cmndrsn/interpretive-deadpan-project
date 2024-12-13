@@ -1,0 +1,700 @@
+---
+title: "Interpretive vs. Deadpan Analyses"
+author: "Cameron J. Anderson"
+format:
+  html:
+    embed-resources: true
+---
+
+# Data Set-up
+
+```{r results='hide', message=FALSE, warning = FALSE}
+# load data
+
+load(paste0(here::here(), '/Data/Bootstrap-2024-10-27.RData'))
+
+emoData <- read.csv(paste0(here::here(), '/Data/Ratings.csv'))
+#emoData[emoData$composer == 'chopin' & emoData$pieceID == 'm4',] <- NA
+#emoData <- na.omit(emoData)
+
+# load dependencies & functions, analyses
+
+source(paste0(here::here(), '/R/Libraries.R'))
+source(paste0(here::here(), '/R/Functions2.R'))
+source(paste0(here::here(), '/R/Preprocessing.R'))
+```
+
+# Power Analysis
+
+We first performed a power analysis to identify how many participants to include in each experiment.
+
+```{r}
+pwrss::pwrss.f.reg(r2 = 0.4, k = 3, power = .9)
+
+```
+
+# Data Analyses
+
+This code prepares a data frame collapsing across participant ratings.
+
+```{r message=F, results='hide', warning=FALSE}
+# create summary data frame
+fullDat %>% dplyr::group_by(composer, albumID, condition, key) %>% 
+  dplyr::summarize(arousal = mean(arousal),
+            valence = mean(valence)) -> summaryDat
+```
+
+## Circumplex plot (Fig 1)
+
+```{r message=FALSE, warning=FALSE}
+
+p1 = pairedCircumplex(subset(fullDat, composer == 'bach'), 
+                      groupCol = 'expID', chosenLvls = c('141', '142')) + 
+  labs(subtitle='Bach', x = '', y = '') +
+  theme(legend.position = 'bottom')
+p2 = pairedCircumplex(chop, groupCol = 'expID', 
+                      chosenLvls = c('155', '137')) + 
+  labs(subtitle='Chopin', x = '', y = '')
+
+cowplot::get_plot_component(p1, 'guide-box-bottom') -> circLeg
+
+gridExtra::grid.arrange(circLeg, 
+             p1 + theme(legend.position = 'none'), 
+             p2 + theme(legend.position = 'none'),
+             layout_matrix = circLayout,
+             bottom = 'Valence',
+             left = 'Arousal')  %>%
+    ggsave(filename = paste0(here::here(), '/Figures/Fig 1',
+                             Sys.Date(), '.png'),
+ width = 7.5, height = 4.5)
+
+
+```
+
+#### Do deadpan & expressive conditions significantly differ in terms of valence and arousal?
+
+```{r, echo = F, results = 'asis', warning=FALSE}
+# valence
+cat(paste("The mean valence rating of deadpan listeners is", round(mean(subset(fullDat, condition == 'deadpan')$valence), 2), "\n"))
+cat(paste("The SD valence rating of deadpan listeners is", round(sd(subset(fullDat, condition == 'deadpan')$valence), 2), "\n"))
+cat(paste("The mean valence rating of expressive listeners is", round(mean(subset(fullDat, condition == 'expressive')$valence), 2), "\n"))
+cat(paste("The SD valence rating of expressive listeners is", round(sd(subset(fullDat, condition == 'expressive')$valence), 2), "\n"))
+# arousal
+cat(paste("The mean arousal rating of deadpan listeners is", round(mean(subset(fullDat, condition == 'deadpan')$arousal), 2), "\n"))
+cat(paste("The SD arousal rating of deadpan listeners is", round(sd(subset(fullDat, condition == 'deadpan')$arousal), 2), "\n"))
+cat(paste("The mean arousal rating of expressive listeners is", round(mean(subset(fullDat, condition == 'expressive')$arousal), 2), '\n'))
+cat(paste("The SD arousal rating of expressive listeners is", round(sd(subset(fullDat, condition == 'expressive')$arousal), 2)))
+
+
+```
+
+### How similar are valence and arousal ratings?
+
+```{r}
+# overall correlations
+
+cor.test(subset(summaryDat, condition == 'expressive')$valence, 
+         subset(summaryDat, condition == 'deadpan')$valence) -> t1
+
+cor.test(subset(summaryDat, condition == 'expressive')$arousal, 
+         subset(summaryDat, condition == 'deadpan')$arousal) -> t2
+
+print(t1)
+print(t2)
+print(p.adjust(c(t1$p.value, t2$p.value)))
+remove(t1, t2)
+
+```
+
+
+
+```{r}
+# test differences (nonparametric)
+
+wilcox.test(x = subset(summaryDat, condition == "expressive")$valence,
+            y = subset(summaryDat, condition == "deadpan")$valence, paired = T, 
+            exact = F) -> t1
+wilcox.test(x = subset(summaryDat, condition == "expressive")$arousal,
+            y = subset(summaryDat, condition == "deadpan")$arousal, paired = T, exact = F) -> t2
+
+message('valence')
+print(t1)
+message('arousal')
+print(t2)
+
+
+print(paste('Adjusted P valence, arousal: ', p.adjust(c(t1$p.value, t2$p.value))))
+
+message('effect size valence')
+as.numeric(rcompanion::wilcoxonPairedR(x = summaryDat$valence, g = summaryDat$condition, ci = T))
+message('effect size arousal')
+as.numeric(rcompanion::wilcoxonPairedR(x = summaryDat$arousal, g = summaryDat$condition, ci = T))
+
+
+
+
+```
+
+-   Arousal exhibits significant differences between conditions.
+
+### How do differences between conditions apply to individual composers?
+
+```{r}
+# comparisons
+
+t1 <- wilcox.test(subset(summaryDat, composer == 'bach' & 
+                           condition == "expressive")$valence, 
+                  subset(summaryDat, composer == 'bach' & 
+                           condition == "deadpan")$valence, 
+                  paired = T, exact =F)
+
+t2 <- wilcox.test(
+                subset(summaryDat, 
+                         composer == 'chopin' & condition == "expressive")$valence,
+                 subset(summaryDat, 
+                        composer == 'chopin' & condition == "deadpan")$valence, 
+            paired = T,
+            exact = F)
+
+## bach -- arousal significantly differs
+
+t3 <- wilcox.test(subset(summaryDat, composer == 'bach' & 
+                           condition == "expressive")$arousal, 
+                  subset(summaryDat, composer == 'bach' & 
+                           condition == "deadpan")$arousal, 
+                  paired = T, exact =F)
+
+t4<- wilcox.test( 
+                subset(summaryDat, 
+                         composer == 'chopin' & condition == "expressive")$arousal,
+                 subset(summaryDat, 
+                        composer == 'chopin' & condition == "deadpan")$arousal, 
+            paired = T,
+            exact = F)
+
+message('bach valence')
+print(t1)
+message('chopin valence')
+print(t2)
+message('bach arousal')
+print(t3)
+message('chopin arousal')
+print(t4)
+p.adjust(c(t1$p.value, t2$p.value, t3$p.value, t4$p.value))
+remove(t1, t2, t3, t4)
+
+# Effect sizes:
+
+rcompanion::wilcoxonPairedR(x = subset(summaryDat, composer == 'bach')$valence, 
+                            g = subset(summaryDat, composer == 'bach')$condition, 
+                            ci = T) |> as.numeric()
+
+rcompanion::wilcoxonPairedR(x = subset(summaryDat, composer == 'chopin')$valence, 
+                            g = subset(summaryDat, composer == 'chopin')$condition, 
+                            ci = T) |> as.numeric()
+
+rcompanion::wilcoxonPairedR(x = subset(summaryDat, composer == 'bach')$arousal, 
+                            g = subset(summaryDat, composer == 'bach')$condition, 
+                            ci = T) |> as.numeric()
+
+rcompanion::wilcoxonPairedR(x = subset(summaryDat, composer == 'chopin')$arousal, 
+                            g = subset(summaryDat, composer == 'chopin')$condition, 
+                            ci = T) |> as.numeric()
+
+
+```
+
+### Which features predict valence and arousal differences?
+
+To assess this, we'll calculate the percent difference of valence and arousal ratings between conditions,
+
+$$
+d(x, y) = \frac{|x-y|}{[\frac{(x+y)}{2}]}*100,
+$$
+
+where $x$ represents ratings in the expressive condition averaged by piece and $y$ represents ratings in the deadpan condition averaged by piece.
+
+```{r message=F, results='hide', warning=FALSE}
+# first calculate averaged values per piece in each condition
+expressive %>% 
+  dplyr::group_by(composer, key) %>% 
+  dplyr::summarize(valence = mean(valence),
+            arousal = mean(arousal),
+            arPerf = mean(arPerf),
+            pitchHeight = mean(pitchHeight),
+            rms = mean(rms),
+            mode = unique(mode)) -> expressiveRatingsAvg
+
+deadpan %>% 
+  dplyr::group_by(composer, key) %>% 
+  dplyr::summarize(valence = mean(valence),
+            arousal = mean(arousal)) -> deadpanRatingsAvg
+
+# now calculate percentage difference in ratings:
+
+expressiveRatingsAvg$valenceDiff <- .getPercentDifference(expressiveRatingsAvg$valence, deadpanRatingsAvg$valence)
+expressiveRatingsAvg$arousalDiff <- .getPercentDifference(expressiveRatingsAvg$arousal, deadpanRatingsAvg$arousal)
+
+```
+
+```{r}
+summary(expressiveRatingsAvg$valenceDiff)
+summary(expressiveRatingsAvg$arousalDiff)
+```
+**Percent differences by mode**
+
+```{r}
+expressiveRatingsAvg %>% 
+  dplyr::group_by(mode) %>% 
+  dplyr::summarize(meanValenceDiff = mean(valenceDiff), 
+            sdValenceDiff=sd(valenceDiff), 
+            meanArousalDiff = mean(arousalDiff), 
+            sdArousalDiff=sd(arousalDiff))
+
+```
+
+#### What cues explain differences?
+
+First, we examine differences across major and minor pieces:
+
+```{r, message=FALSE, warning=FALSE}
+# now valence...
+
+percentCorrelationPlot(expressiveRatingsAvg, 
+                     y = expressiveRatingsAvg$valenceDiff,
+                     ylim = c(-1,25),
+                     x = expressiveRatingsAvg$arPerf,
+                     axis.text.x = element_blank(),
+                     axis.ticks.x = element_blank(),
+                     legend.position = 'none')+labs(subtitle = 'Valence') -> cp1
+percentCorrelationPlot(expressiveRatingsAvg, 
+                       y = expressiveRatingsAvg$valenceDiff,
+                       ylim = c(-1,25),
+                       x = expressiveRatingsAvg$rms,
+                       axis.text.y = element_blank(),
+                       axis.ticks.y = element_blank(),
+                       axis.title.y = element_blank(),
+                       axis.line.y = element_blank(),
+                       axis.text.x = element_blank(),
+                       axis.ticks.x = element_blank(),
+                       legend.position = 'none')+labs(subtitle = ' ') -> cp2
+percentCorrelationPlot(expressiveRatingsAvg, 
+                       y = expressiveRatingsAvg$valenceDiff, 
+                       ylim = c(-1,25),
+                       x = expressiveRatingsAvg$pitchHeight,
+                       axis.text.y = element_blank(),
+                       axis.ticks.y = element_blank(),
+                       axis.title.y = element_blank(),
+                       axis.line.y = element_blank(),
+                       axis.text.x = element_blank(),
+                       axis.ticks.x = element_blank(),
+                       legend.position = 'none')+labs(subtitle = ' ') -> cp3
+  ## OVER AROUSAL
+  
+percentCorrelationPlot(expressiveRatingsAvg, 
+                     y = expressiveRatingsAvg$arousalDiff, 
+                     x = expressiveRatingsAvg$arPerf,
+                     xLab = 'Attack Rate',
+                     legend.position = 'none')+labs(subtitle = 'Arousal') -> cp4
+percentCorrelationPlot(expressiveRatingsAvg, 
+                     y = expressiveRatingsAvg$arousalDiff, 
+                     x = expressiveRatingsAvg$rms,
+                     xLab = 'RMS Amp.',
+                     axis.text.y = element_blank(),
+                     axis.ticks.y = element_blank(),
+                     axis.title.y = element_blank(),
+                     axis.line.y = element_blank(),
+                     legend.position = 'none')+labs(subtitle = ' ') -> cp5
+percentCorrelationPlot(expressiveRatingsAvg, 
+                     y = expressiveRatingsAvg$arousalDiff, 
+                     x = expressiveRatingsAvg$pitchHeight,
+                     xLab = 'Pitch Height',
+                     axis.text.y = element_blank(),
+                     axis.ticks.y = element_blank(),
+                     axis.title.y = element_blank(),
+                     axis.line.y = element_blank(),
+                     legend.position = 'none')+labs(subtitle = ' ') -> cp6
+grid.arrange(percentLegend,
+             cp1, cp2, cp3, cp4, cp5, cp6,
+             left = 'Absolute Difference (%)',
+            # ncol = 3, nrow = 2,
+             layout_matrix = pctCorLay) -> cuePercentPlot
+
+ ggsave(filename = paste0(here::here(),
+                          '/Figures/Fig 2', Sys.Date(), '.png'),
+        plot = cuePercentPlot,
+        width = 7.5, height = 4.5)
+
+
+```
+
+```{r}
+diffsMaj <- subset(expressiveRatingsAvg, mode == 'Major')
+diffsMin <- subset(expressiveRatingsAvg, mode == 'minor')
+
+
+cor.test(diffsMin$arPerf, diffsMin$valenceDiff) -> t1
+cor.test(diffsMaj$arPerf, diffsMaj$valenceDiff) -> t2
+cor.test(diffsMin$rms, diffsMin$valenceDiff) -> t3
+cor.test(diffsMaj$rms, diffsMaj$valenceDiff) -> t4
+cor.test(diffsMin$pitchHeight, diffsMin$valenceDiff) -> t5
+cor.test(diffsMaj$pitchHeight, diffsMaj$valenceDiff) -> t6
+message("arPerf, valence, minor")
+print(t1)
+message("arPerf, valence, major")
+print(t2)
+message("rms, valence, minor")
+print(t3)
+message("arPerf, valence, major")
+print(t4)
+message("ph, valence, minor")
+print(t5)
+message("ph, valence, major")
+print(t6)
+
+print(p.adjust(c(t1$p.value, t2$p.value, t3$p.value, 
+           t4$p.value, t5$p.value, t6$p.value)))
+
+remove(t1,t2,t3,t4,t5,t6)
+
+
+cor.test(diffsMin$arPerf, diffsMin$arousalDiff) -> t1
+cor.test(diffsMaj$arPerf, diffsMaj$arousalDiff) -> t2
+cor.test(diffsMin$rms, diffsMin$arousalDiff) -> t3
+cor.test(diffsMaj$rms, diffsMaj$arousalDiff) -> t4
+cor.test(diffsMin$pitchHeight, diffsMin$arousalDiff) -> t5
+cor.test(diffsMaj$pitchHeight, diffsMaj$arousalDiff) -> t6
+
+message("arPerf, arousal, minor")
+print(t1)
+message("arPerf, arousal, major")
+print(t2)
+message("rms, arousal, minor")
+print(t3)
+message("rms, arousal, major")
+print(t4)
+message("ph, arousal, minor")
+print(t5)
+message("ph, arousal, major")
+print(t6)
+
+print(round(p.adjust(c(t1$p.value, t2$p.value, t3$p.value, 
+           t4$p.value, t5$p.value, t6$p.value)), 5))
+
+remove(t1,t2,t3,t4,t5,t6)
+```
+
+## **Beta Regression**
+
+Perform beta regression to assess significance of differences while dealing with positive (0,1) data:
+
+Create transformation function because data can include 0 and 1 in range:
+
+$$(y * (n -  1) + 0.5)/n$$
+
+```{r}
+arousalDiffB = betaTransform(expressiveRatingsAvg$arousalDiff)
+valenceDiffB = betaTransform(expressiveRatingsAvg$valenceDiff)
+
+# center values of attack rate, rms, pitch height
+
+expressiveRatingsAvg2 <- expressiveRatingsAvg
+
+expressiveRatingsAvg2$arPerf <- expressiveRatingsAvg$arPerf - mean(expressiveRatingsAvg$arPerf)
+expressiveRatingsAvg2$pitchHeight <- expressiveRatingsAvg$pitchHeight - mean(expressiveRatingsAvg$pitchHeight)
+expressiveRatingsAvg2$rms <- expressiveRatingsAvg$rms - mean(expressiveRatingsAvg$rms)
+expressiveRatingsAvg2$mode <- as.numeric(factor(expressiveRatingsAvg$mode)) - 1.5
+
+```
+
+```{r}
+set.seed(123)
+
+bregAro = betareg::betareg(
+  arousalDiffB ~ arPerf + rms + pitchHeight + mode, 
+  data = expressiveRatingsAvg2)
+bregVal = betareg::betareg(
+  valenceDiffB ~ arPerf + rms + pitchHeight + mode + (arPerf*mode) +
+      (rms*mode) + (pitchHeight*mode), 
+    data = expressiveRatingsAvg2)
+```
+
+```{r}
+summary(bregAro)
+summary(bregVal)
+```
+
+#### Which pieces significantly differ?
+
+Next we employ a bootstrap approach to assess how many pieces significantly differed in valence and arousal
+
+```{r, message = F, results='hide'}
+
+# fullDat$pieceID = paste0(fullDat$pieceID,
+#                          substr(fullDat$composer, 1, 1))
+# set.seed(1)
+# bootstrapCircumplexDifference(
+#                  subset(fullDat, condition == 'expressive'),
+#                  subset(fullDat, condition == 'deadpan'),
+#                  returnSummary = F, replications = 10000,
+#                sampleSize = 30,
+#                xlimsVal = c(-1.5,1.5),
+#                xlimsAro = c(-1.5,1.5),
+#                ylimsVal = c(-1.5,1.5),
+#                ylimsAro = c(-1.5,1.5), scaleVars = F) -> bootData
+# save(bootData,
+#      file = paste0(here::here(),
+#                    '/Data/Bootstrap',
+#                    Sys.Date(), '.RData')
+# )
+
+```
+
+# Coefficients of Variation
+
+```{r message=FALSE, warning = FALSE}
+expressCVSig <- data.frame(
+  group = c('Expressive', 'Deadpan'),
+  meanCVVal = c(mean(bootData$valenceA_cv), mean(bootData$valenceB_cv)),
+  lciCVVal = c(quantile(bootData$valenceA_cv, c(0.025)),
+               quantile(bootData$valenceB_cv, c(0.025))),
+  uciCVVal = c(quantile(bootData$valenceA_cv, c(0.975)),
+               quantile(bootData$valenceB_cv, c(0.975))),
+  meanCVAro = c(mean(bootData$arousalA_cv),mean(bootData$arousalB_cv)),
+  lciCVAro = c(quantile(bootData$arousalA_cv, c(0.025)),
+               quantile(bootData$arousalB_cv, c(0.025))),
+  uciCVAro = c(quantile(bootData$arousalA_cv, c(0.975)),
+               quantile(bootData$arousalB_cv, c(0.975)))
+) 
+
+ggplot(expressCVSig, aes(x = group, y = meanCVVal*100,
+                         ymin = lciCVVal*100, ymax = uciCVVal*100)) +
+  geom_point() + 
+  geom_errorbar() + 
+  ylim(20, 50) + 
+  theme_classic()+
+  labs(y = 'Coefficient of Variation (%)', 
+       x = 'Condition', subtitle='Valence') +
+  
+ggplot(expressCVSig, 
+       aes(x = group, 
+           y = meanCVAro*100,
+          ymin = lciCVAro*100, 
+          ymax = uciCVAro*100))+
+  geom_point()+ geom_errorbar()+ylim(20,50) +
+  theme_classic() +
+  labs(y = '', x = 'Condition', subtitle='Arousal') +
+  theme(axis.ticks.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.line.y = element_blank())
+ggsave(filename = paste0(here::here(), '/Figures/Fig 4', Sys.Date(), '.png'))
+```
+
+```{r, warning=FALSE, message=FALSE}
+expressCVSig[,2:ncol(expressCVSig)] <- apply(
+  expressCVSig[,2:ncol(expressCVSig)],2, 
+      function(x) round(as.numeric(x)*100, 4)) 
+
+expressCVSig
+```
+
+# Plot differences
+
+```{r}
+bootPlotDF$key <- nameKeysSimple(
+  substr(bootPlotDF$pieceID, 1, nchar(bootPlotDF$pieceID)-1))
+
+bootPlotDF$composer <- as.factor(
+  substr(bootPlotDF$pieceID,
+       nchar(bootPlotDF$pieceID),
+             nchar(bootPlotDF$pieceID)
+       )
+  )
+
+levels(bootPlotDF$composer) = c('bach', 'chopin')
+
+# temporarily change key back to a character vector to replace c# value with db
+
+bootPlotDF$key = as.character(bootPlotDF$key)
+bootPlotDF$key[bootPlotDF$composer == 'chopin' & 
+             bootPlotDF$key == 'C#'] <- 'Db'
+# now convert back to factor
+bootPlotDF$key = as.factor(bootPlotDF$key)
+
+bootPlotDF$key = prettyKeyCol(bootPlotDF$key)
+
+
+```
+
+```{r}
+bootPlotDF$sigDifValence <- sign(bootPlotDF$changeValenceLCI) == sign(bootPlotDF$changeValenceUCI)
+bootPlotDF$sigDifArousal <- sign(bootPlotDF$changeArousalLCI) == sign(bootPlotDF$changeArousalUCI)
+summary(bootPlotDF$sigDifArousal)
+summary(bootPlotDF$sigDifValence)
+
+```
+
+-   21 pieces significantly differed in arousal, 13 of which were by Bach
+
+-   4 pieces differed significantly in valence
+
+Note: Bach and Chopin wrote G# as key sig in minor keys, but Ab in major keys; Chopin wrote in Db minor.
+
+```{r, warning=F, message=FALSE}
+
+# change dimensions for easy visualization
+wideDat <- summaryDat[,!colnames(summaryDat) == 'albumID'] %>% 
+  tidyr::pivot_wider(names_from = 'condition', 
+              values_from = c('valence', 'arousal')) 
+
+wideDat$mode <- factor(wideDat$key == tolower(wideDat$key))
+levels(wideDat$mode) <- c('Major', 'minor')
+
+
+# show ids where difference is significant
+
+corrSigPlot <- data.frame()
+
+for(thisComposer in c('bach', 'chopin')) {
+  # subset by composer
+  wideDatSS = subset(wideDat, composer == thisComposer) 
+  # subset bootstrap simulations
+  bootPlotSS = subset(bootPlotDF, composer == thisComposer)
+  # check which keys yield sig difference in bootplot
+  wideDatSS$labelsValence = wideDatSS$key %in% bootPlotSS$key[bootPlotSS$sigDifValence == T]
+  wideDatSS$labelsArousal = wideDatSS$key %in% bootPlotSS$key[bootPlotSS$sigDifArousal == T]
+  # bind to data frame
+  corrSigPlot <- rbind(corrSigPlot, wideDatSS)
+}
+# hide non-significant key signatures for valence and change mode colour to grey
+corrSigPlot$key2 <- corrSigPlot$key
+corrSigPlot$key2[!corrSigPlot$labelsValence] <- ''
+corrSigPlot$mode2 <- corrSigPlot$mode
+levels(corrSigPlot$mode2[!corrSigPlot$labelsValence]) <- c('*', '*')
+corrSigPlot$key3 <- corrSigPlot$key
+corrSigPlot$key3[!corrSigPlot$labelsArousal] <- ''
+corrSigPlot$mode3 <- corrSigPlot$mode
+levels(corrSigPlot$mode3[!corrSigPlot$labelsArousal]) <- c('*', '*')
+
+```
+
+```{r warning=FALSE, message=FALSE}
+# now plot figures:
+corrSigPlot %>% 
+  ggplot(aes(x = valence_deadpan, y = valence_expressive, 
+             label = key2, alpha = mode2)
+         ) + 
+  geom_smooth(method='lm',linetype = 1,color = 'grey50', se = F, alpha = 0.7) +
+  geom_abline(color = 'grey', linetype = 2) +
+  geom_point(color = 'grey',
+             aes(shape = composer, color = mode2, alpha = mode2)
+             ) +
+  geom_point(
+    data = subset(corrSigPlot, !is.na(corrSigPlot$mode2)), 
+             aes(shape = composer, color = mode2, alpha = mode2)
+    ) +
+  geom_text_repel(aes(color = mode2, alpha = mode2), max.overlaps = 12) +
+  theme_classic() +
+  scale_colour_manual(values = c('firebrick1', 'dodgerblue2')) +
+  scale_alpha_manual(values = c(1,1,0.2)) +
+  labs(x='Deadpan Rating',y='Expressive Rating') +
+  ggtitle('Valence') +
+  theme(legend.position = 'none') -> cc1
+
+corrSigPlot %>% 
+  ggplot(aes(x = arousal_deadpan, y = arousal_expressive,
+             label = key3, alpha = mode3)) +  
+  geom_smooth(method='lm',linetype = 1,color = 'grey50', se = F, alpha = 0.7)+
+  geom_abline(color = 'grey', linetype = 2)+
+  geom_point(color = 'grey', aes(shape = composer, color = mode3, alpha = mode3))+
+  geom_point(data = subset(corrSigPlot, !is.na(corrSigPlot$mode3)), 
+             aes(shape = composer, color = mode3, alpha = mode3)
+             )+
+  geom_text_repel(aes(color = mode3, alpha = mode3), max.overlaps = 15, nudge_y = 0.2)+
+  theme_classic()+
+  scale_colour_manual(values = c('firebrick1', 'dodgerblue2'))+
+  scale_alpha_manual(values = c(1,1,0.2))+
+  scale_y_continuous(position = 'right')+
+  labs(x='Deadpan Rating',y='Expressive Rating')+
+  ggtitle('Arousal') +
+  theme(legend.position = 'none') -> cc2
+
+
+```
+
+```{r warning=FALSE}
+# layout figures...
+cc1<-cc1 + 
+  xlim(1,7) +
+  ylim(1,7) +
+  labs(x='Deadpan Rating',
+       y='Expressive Rating')
+
+cc2<- cc2 + 
+  xlim(1,100) + 
+  ylim(1,100) + 
+  labs(x='Deadpan Rating',
+       y='Expressive Rating')
+```
+
+```{r warning=FALSE, message=FALSE}
+grid.arrange(correlationLegend,
+             cc1,
+             bs1+theme(axis.title.y = element_blank()),
+             cc2,
+             bs2+theme(axis.title.y = element_blank()),
+             layout_matrix = corrSigLayout) -> all_corr_plots
+
+ggsave(paste0(here::here(), '/Figures/Fig 3', Sys.Date(), '.png'), plot = all_corr_plots,
+       height = 5, width = 12.5, units = 'in')
+
+```
+
+#### Supplemental Analyses
+
+-   This analyses how uncentered estimates contributed to multicollinearity with mode
+
+    ```{r}
+    # convert mode to numeric variable for point-biserial correlation: 
+    x = as.numeric(factor(expressiveRatingsAvg$mode))
+    # define uncentered pitch height 
+    z = expressiveRatingsAvg$pitchHeight 
+    # define uncentered attack rate 
+    w = expressiveRatingsAvg$arPerf 
+    # define interaction between mode and uncentered pitch height 
+    xz = x*z 
+    # define interaction between mode and uncentered attack rate 
+    xw = x*w
+    # define mean-centered pitch height
+    z_c =  z - mean(z) 
+    # define mean-centered attack rate 
+    w_c = w - mean(w) 
+    # define interaction between mean-centered mode and pitch height 
+    xz_c = x*z_c 
+    # define interaction between mean-centered mode and attack rate
+    xw_c = x*w_c
+    ```
+
+```{r message=FALSE, warning = FALSE}
+#plot each relation between mode and interaction terms 
+plotCorrelation(x, xz, xLab = 'Mode', yLab = 'Mode x \n(Uncentered) Pitch Height')+
+  labs(title = 'Uncentered Pitch Height')+ 
+  
+plotCorrelation(x, xz_c, xLab = 'Mode', yLab = 'Mode x \n(Centered) Pitch Height')+
+  labs(title = 'Mean-Centered Pitch Height')+ 
+  
+plotCorrelation(x, xw, xLab = 'Mode', yLab = 'Mode x \n(Uncentered) Attack Rate')+
+  labs(title = 'Uncentered Attack Rate')+ 
+  
+plotCorrelation(x, xw_c, xLab = 'Mode', yLab = 'Mode x \n(Centered) Pitch Height')+
+  labs(title = 'Mean-Centered Attack Rate')+   
+  
+plot_annotation(subtitle = "Relation between mode's main effect and uncentred 
+                (left) vs. centred (right) interaction terms") 
+ggsave(paste0(here::here(), 
+              '/Figures/SupplementalFig-',
+              Sys.Date(),
+              '.png'))
+```
+
+Correlation between mode and (i) mode x pitch height interaction term (top); (ii) mode x attack rate interaction term (bottom). Left: pitch height and attack rate uncentered; right: pitch height and attack rate centered at respective mean value.
